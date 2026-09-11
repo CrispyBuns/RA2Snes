@@ -181,6 +181,32 @@ ra2snes::ra2snes(QObject *parent)
         millisecPassed = QDateTime::currentDateTime();
     });
 
+    connect(raclient, &RAClient::localAchievementsLoaded, this, [=] (const QString& message, bool success) {
+        emit displayMessage(message, !success);
+    });
+
+    connect(raclient, &RAClient::localGameLoaded, this, [=] {
+        // Mirrors the sessionStarted handler above, minus the online-only
+        // steps (getUnlocks/startSession) that a local, unofficial set has
+        // no server-side equivalent for.
+        m_gameLoaded = true;
+        m_loadingGame = false;
+        emit achievementModelReady();
+        emit enableModeSwitching();
+        reader->initTriggers(raclient->getAchievementModel()->getAchievements(), raclient->getRichPresence(), usb2snes->getRamSizeData(), m_customFirmware);
+        uniqueMemoryAddresses = reader->getUniqueMemoryAddresses();
+        if(uniqueMemoryAddresses.isEmpty())
+            doThisTaskNext = NoChecksNeeded;
+        else if(m_customFirmware)
+            doThisTaskNext = SetupNMIData;
+        else
+            doThisTaskNext = GetConsoleAddresses; // local sets are always softcore, never CheckPatched/hardcore
+        if(!richTimer->isActive())
+            richTimer->start(30000);
+        usb2snes->infos();
+        millisecPassed = QDateTime::currentDateTime();
+    });
+
     connect(reader, &MemoryReader::updateRichPresence, this, [=](const QString& status) {
         updateRichText(status);
     });
@@ -248,6 +274,22 @@ void ra2snes::onUsb2SnesGetFileDataReceived()
         romData = romData.mid(512);
     QByteArray md5Hash = QCryptographicHash::hash(romData, QCryptographicHash::Md5);
     raclient->loadGame(md5Hash.toHex());
+}
+
+bool ra2snes::loadLocalAchievementsFile(const QString& filePath)
+{
+    // Manually pick a local achievement file for the ROM that's currently
+    // loaded (its hash is already known from onUsb2SnesGetFileDataReceived,
+    // whether or not the server recognized it). Exposed to QML so the UI
+    // can offer a "Load Local Achievements..." file picker for games -
+    // like unlicensed hacks - that don't have an official set.
+    QString hash = raclient->getGameInfoModel()->md5hash();
+    if (hash.isEmpty())
+    {
+        emit displayMessage("Load a game before loading a local achievement file", true);
+        return false;
+    }
+    return raclient->loadLocalAchievements(hash, filePath);
 }
 
 void ra2snes::onUsb2SnesGetConfigDataReceived()
@@ -795,6 +837,11 @@ void ra2snes::changeMode()
         reason += (QString(needsSoftcore ? ", " : "") + "InGameHooks Enabled");
         needsSoftcore = true;
     }
+    if(raclient->isLocalGame())
+    {
+        reason += (QString(needsSoftcore ? ", " : "") + "Local/Unofficial Achievements Loaded");
+        needsSoftcore = true;
+    }
     if(needsSoftcore)
     {
         user->hardcore(false);
@@ -864,6 +911,7 @@ void ra2snes::setConsole(const QString &console)
 void ra2snes::setAppDirPath(const QString &appDirPath)
 {
     m_appDirPath = appDirPath;
+    raclient->setLocalAchievementsDirectory(m_appDirPath + QDir::separator() + "LocalAchievements");
     loadSettings();
     if(!m_ignore)
         checkForUpdate();

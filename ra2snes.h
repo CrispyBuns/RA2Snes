@@ -68,6 +68,7 @@ public slots:
     void beginUpdate();
     void ignoreUpdates(bool i);
     void enableWebSocket(bool e);
+    bool loadLocalAchievementsFile(const QString& filePath);
 
 signals:
     void loginSuccess();

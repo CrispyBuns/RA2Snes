@@ -42,6 +42,7 @@ struct AchievementInfo {
     int value = 0;
     int percent = 0;
     int target = 0;
+    bool isLocal = false;
 };
 
 struct LeaderboardInfo {

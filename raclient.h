@@ -23,12 +23,16 @@ public:
     void loginToken(const QString& username, const QString& token);
     void loadGame(const QString& md5hash);
     void getAchievements(const unsigned int& gameId);
+    void setLocalAchievementsDirectory(const QString& dir);
+    bool loadLocalAchievements(const QString& hash, const QString& filePath = QString());
+    bool isLocalGame() const;
     void getUnlocks();
     void startSession();
     void awardAchievement(const unsigned int& id, const QDateTime& achieved);
     //void getLBPlacements();
     AchievementModel* getAchievementModel();
     UserInfoModel* getUserInfoModel();
+    GameInfoModel* getGameInfoModel();
     QList<LeaderboardInfo> getLeaderboards();
     void setHardcore(const bool& h);
     void setConsole(const QString& c, const QUrl& icon);
@@ -72,6 +76,8 @@ signals:
     void awardedAchievement(const unsigned int& id, const QString& time, const unsigned int& points);
     void sessionStarted();
     void requestFinished();
+    void localAchievementsLoaded(const QString& message, bool success);
+    void localGameLoaded();
 
 private slots:
     void onWebSocketError(QAbstractSocket::SocketError error);
@@ -120,6 +126,10 @@ private:
     QQueue<QString> m_wsQueue;
     QJsonObject latestPost;
     bool running;
+
+    bool m_localMode;
+    QString m_localAchievementsDir;
+    QString m_localUnlockPath;
 };
 
 #endif // RACLIENT_H

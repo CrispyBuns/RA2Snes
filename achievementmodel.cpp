@@ -57,6 +57,8 @@ QVariant AchievementModel::data(const QModelIndex &index, int role) const {
         return achievement.percent;
     case TargetRole:
         return achievement.target;
+    case IsLocalRole:
+        return achievement.isLocal;
     default:
         return QVariant();
     }
@@ -87,6 +89,7 @@ QVariantMap AchievementModel::get(int row) const {
     map["value"] = a.value;
     map["percent"] = a.percent;
     map["target"] = a.target;
+    map["isLocal"] = a.isLocal;
 
     return map;
 }
@@ -114,6 +117,7 @@ QHash<int, QByteArray> AchievementModel::roleNames() const {
     roles[ValueRole] = "value";
     roles[PercentRole] = "percent";
     roles[TargetRole] = "target";
+    roles[IsLocalRole] = "isLocal";
     return roles;
 }
 

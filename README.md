@@ -20,6 +20,10 @@ Run both QUsb2Snes and RA2Snes.
 
 Once RA2Snes has been run for the first time, the settings.ini file is created in the same directory as RA2Snes. This file holds all program settings, including your saved login information.
 
+### Local Achievements
+
+For ROMs that aren't recognized by the RetroAchievements server (unlicensed hacks, homebrew, etc.), RA2Snes can load an unofficial achievement set from a local file instead. See [LOCAL_ACHIEVEMENTS.md](LOCAL_ACHIEVEMENTS.md) for the file format and setup.
+
 ### Currently Unsupported Games
 
 SD2Snes cannot currently read the memory of Super Game Boy and games with certain [enhancement chips](https://en.wikipedia.org/wiki/List_of_Super_NES_enhancement_chips).

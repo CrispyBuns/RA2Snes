@@ -29,7 +29,8 @@ public:
         PrimedRole,
         ValueRole,
         PercentRole,
-        TargetRole
+        TargetRole,
+        IsLocalRole
     };
 
     static AchievementModel* instance() {

@@ -76,6 +76,8 @@ set(PROJECT_SOURCES
     usb2snes.h
     raclient.cpp
     raclient.h
+    localachievements.cpp
+    localachievements.h
     memoryreader.cpp
     memoryreader.h
     rastructs.h

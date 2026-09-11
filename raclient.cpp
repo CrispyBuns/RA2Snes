@@ -3,8 +3,12 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QFile>
+#include <QFileInfo>
+#include <QDir>
 #include "rc_version.h"
 #include "version.h"
+#include "localachievements.h"
 
 const QString RAClient::baseUrl = "https://retroachievements.org/";
 const QString RAClient::mediaUrl = "https://media.retroachievements.org/";
@@ -23,6 +27,7 @@ RAClient::RAClient(QObject *parent)
     m_refresh = false;
     running = false;
     m_closing = false;
+    m_localMode = false;
     m_wsTimer = new QTimer(this);
     m_reconnectTimer = new QTimer(this);
     m_reconnectTimer->setSingleShot(true);
@@ -72,6 +77,108 @@ void RAClient::loadGame(const QString& md5hash)
     post_content["m"] = md5hash;
 
     sendRequest("gameid", post_content);
+}
+
+void RAClient::setLocalAchievementsDirectory(const QString& dir)
+{
+    m_localAchievementsDir = dir;
+}
+
+bool RAClient::isLocalGame() const
+{
+    return m_localMode;
+}
+
+bool RAClient::loadLocalAchievements(const QString& hash, const QString& filePath)
+{
+    if (hash.isEmpty())
+        return false;
+
+    QString path = filePath;
+    if (path.isEmpty())
+    {
+        if (m_localAchievementsDir.isEmpty())
+            return false;
+        path = m_localAchievementsDir + QDir::separator() + hash + ".txt";
+    }
+
+    if (!QFile::exists(path))
+        return false;
+
+    QString error;
+    QList<AchievementInfo> achievements = LocalAchievements::parseFile(path, &error);
+    if (achievements.isEmpty())
+    {
+        emit localAchievementsLoaded(error.isEmpty() ? QString("No achievements found in %1").arg(path) : error, false);
+        return false;
+    }
+
+    // Local sets can't be verified by the server, so hardcore mode (and any
+    // server-side unlock submission) never applies to them.
+    setHardcore(false);
+
+    gameinfo_model->md5hash(hash);
+    gameinfo_model->id(0);
+    gameinfo_model->title(QFileInfo(path).completeBaseName());
+    gameinfo_model->image_icon(QString());
+    gameinfo_model->image_icon_url(QUrl());
+    gameinfo_model->game_link(QUrl());
+    gameinfo_model->missable_count(0);
+    gameinfo_model->point_total(0);
+    gameinfo_model->mastered(false);
+    gameinfo_model->completion_count(0);
+    gameinfo_model->beaten(false);
+    gameinfo_model->point_count(0);
+    gameinfo_model->achievement_count(0);
+    gameinfo_model->rich_presence(QString());
+
+    achievement_model->clearAchievements();
+    progressionMap.clear();
+    winMap.clear();
+    warning = false;
+
+    int total = 0;
+    for (const auto& info : achievements)
+    {
+        total += info.points;
+        achievement_model->appendAchievement(info);
+    }
+
+    gameinfo_model->point_total(total);
+    gameinfo_model->achievement_count(achievement_model->rowCount());
+
+    m_localMode = true;
+    m_localUnlockPath = m_localAchievementsDir.isEmpty()
+        ? (QFileInfo(path).absolutePath() + QDir::separator() + hash + ".unlocks")
+        : (m_localAchievementsDir + QDir::separator() + hash + ".unlocks");
+
+    // Restore whatever this set had unlocked last time it was played -
+    // there's no server session to fetch unlock state from.
+    LocalAchievements::applyUnlocks(achievement_model, m_localUnlockPath);
+
+    int completed = 0;
+    int earnedPoints = 0;
+    const auto& loaded = achievement_model->getAchievements();
+    for (const auto& a : loaded)
+    {
+        if (a.unlocked)
+        {
+            ++completed;
+            earnedPoints += a.points;
+        }
+    }
+    gameinfo_model->completion_count(completed);
+    gameinfo_model->point_count(earnedPoints);
+    isGameMastered();
+
+    sendGameData();
+
+    emit localAchievementsLoaded(error.isEmpty()
+        ? QString("Loaded %1 local achievement(s)").arg(achievement_model->rowCount())
+        : error, true);
+    emit localGameLoaded();
+
+    return true;
 }
 
 void RAClient::getAchievements(const unsigned int& gameid)
@@ -157,6 +264,15 @@ void RAClient::awardAchievement(const unsigned int& id, const QDateTime& achieve
     achData["unlocked_timestamp"] = ach->time_unlocked_string;
 
     sendToWebSocket("achievement_unlocked", achData);
+
+    if (ach->isLocal)
+    {
+        // Local/unofficial achievements have no matching record on the
+        // server, so there's nothing valid to submit - just persist the
+        // unlock locally so it survives to the next session.
+        LocalAchievements::saveUnlock(m_localUnlockPath, id, achieved);
+        return;
+    }
 
     QByteArray md5hash;
     md5hash.append(QString::number(id).toLocal8Bit());
@@ -253,6 +369,8 @@ void RAClient::clearUser()
 void RAClient::clearGame()
 {
     gameinfo_model->clearGame();
+    m_localMode = false;
+    m_localUnlockPath.clear();
 }
 
 QList<LeaderboardInfo> RAClient::getLeaderboards()
@@ -269,6 +387,11 @@ void RAClient::setConsole(const QString& c, const QUrl& icon)
 UserInfoModel* RAClient::getUserInfoModel()
 {
     return userinfo_model;
+}
+
+GameInfoModel* RAClient::getGameInfoModel()
+{
+    return gameinfo_model;
 }
 
 AchievementModel* RAClient::getAchievementModel()
@@ -438,6 +561,21 @@ void RAClient::handleLoginResponse(const QJsonObject& jsonObject)
 void RAClient::handleGameIDResponse(const QJsonObject& jsonObject)
 {
     gameinfo_model->id(jsonObject["GameID"].toInt());
+
+    if (gameinfo_model->id() == 0)
+    {
+        // Hash isn't recognized by the server - most likely an unlicensed
+        // ROM hack or homebrew without an official set. Fall back to a
+        // local achievement file for this hash if one is available before
+        // giving up.
+        if (loadLocalAchievements(gameinfo_model->md5hash()))
+            return;
+    }
+    else
+    {
+        m_localMode = false;
+    }
+
     emit gotGameID(gameinfo_model->id());
 }
 
