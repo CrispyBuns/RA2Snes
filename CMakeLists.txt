@@ -9,30 +9,27 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# --- Automatic static Qt6 + static MinGW runtime linking ---------------
-# On MSYS2 MinGW, prefer the statically-built Qt6 package
-# (pacman -S mingw-w64-x86_64-qt6-static) and statically link libgcc,
-# libstdc++, and libwinpthread, so the resulting .exe doesn't depend on
-# any DLLs from /mingw64/bin. Has no effect on MSVC/Linux/macOS builds.
-option(RA2SNES_STATIC_QT "Link against a statically-built Qt6 and the MinGW runtime" ON)
-
-if(RA2SNES_STATIC_QT AND MINGW)
+# --- Mandatory static Qt6 + static MinGW runtime linking ---------------
+# On MSYS2 MinGW builds, this project REQUIRES the statically-built Qt6
+# package (pacman -S mingw-w64-x86_64-qt6-static) and statically links
+# libgcc, libstdc++, and libwinpthread, so the resulting .exe carries no
+# dependency on DLLs from /mingw64/bin. There is no shared-Qt fallback:
+# configure fails loudly if the static Qt6 package isn't installed.
+# (Has no effect on MSVC/Linux/macOS builds, where these GCC-only flags
+# don't apply.)
+if(MINGW)
     set(RA2SNES_STATIC_QT_PREFIX "/mingw64/qt6-static" CACHE PATH
         "Install prefix of the MSYS2 static Qt6 package (mingw-w64-x86_64-qt6-static)")
 
-    if(EXISTS "${RA2SNES_STATIC_QT_PREFIX}/lib/cmake")
-        list(PREPEND CMAKE_PREFIX_PATH "${RA2SNES_STATIC_QT_PREFIX}")
-        message(STATUS "RA2Snes: using static Qt6 from ${RA2SNES_STATIC_QT_PREFIX}")
-    else()
-        message(WARNING
-            "RA2Snes: RA2SNES_STATIC_QT is ON but no static Qt6 was found at "
-            "${RA2SNES_STATIC_QT_PREFIX}. Install it with:\n"
-            "    pacman -S mingw-w64-x86_64-qt6-static\n"
-            "Falling back to a normal (shared) Qt6 build for now.")
-        set(RA2SNES_STATIC_QT OFF)
+    if(NOT EXISTS "${RA2SNES_STATIC_QT_PREFIX}/lib/cmake")
+        message(FATAL_ERROR
+            "RA2Snes: static Qt6 not found at ${RA2SNES_STATIC_QT_PREFIX}. "
+            "Install it with:\n    pacman -S mingw-w64-x86_64-qt6-static\n"
+            "(Or pass -DRA2SNES_STATIC_QT_PREFIX=/path/to/qt6-static if it's installed elsewhere.)")
     endif()
-elseif(RA2SNES_STATIC_QT AND NOT MINGW)
-    set(RA2SNES_STATIC_QT OFF)
+
+    list(PREPEND CMAKE_PREFIX_PATH "${RA2SNES_STATIC_QT_PREFIX}")
+    message(STATUS "RA2Snes: using static Qt6 from ${RA2SNES_STATIC_QT_PREFIX}")
 endif()
 # -------------------------------------------------------------------------
 
@@ -139,7 +136,7 @@ target_link_libraries(updater PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
 )
 
-if(RA2SNES_STATIC_QT)
+if(MINGW)
     target_link_options(updater PRIVATE -static -static-libgcc -static-libstdc++ -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive)
 endif()
 
@@ -171,7 +168,7 @@ target_link_libraries(ra2snes PRIVATE
     Qt${QT_VERSION_MAJOR}::QuickWidgets
 )
 
-if(RA2SNES_STATIC_QT)
+if(MINGW)
     target_link_options(ra2snes PRIVATE -static -static-libgcc -static-libstdc++ -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive)
 endif()
 
